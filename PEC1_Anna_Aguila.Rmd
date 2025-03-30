@@ -1,0 +1,200 @@
+---
+title: "PEC1 - Análisis de datos ómicos"
+author: "Anna Aguila Griful"
+date: '`r format(Sys.Date(),"%e de %B, %Y")`'
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+params:
+  data_set: "human_cachexia.csv"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+require(BiocManager)
+require(SummarizedExperiment)
+require(ggplot2)
+require(reshape2)
+require(kableExtra)
+```
+
+# 1. Importación de los datos
+
+Usaremos el dataset `2024-Cachexia` del [repositorio de GitHub](https://github.com/nutrimetabolomics/metaboData/blob/main/Datasets/2024-Cachexia/human_cachexia.csv), que contiene inforación metabólica de sujetos enfermos (cachexia) y de sujetos sanos (control). 
+
+Se ha escogido este dataset debido a la calidad de los datos que contiene. Como se especifica en la [descripción de los datos](https://github.com/nutrimetabolomics/metaboData/blob/main/Datasets/2024-Cachexia/description.md), estos ya ha pasado un contol de calidad gracias al cual es posile tabajar directamente con un mínimo pre-procesamiento.
+
+```{r}
+data_set <- read.csv(params$data_set)
+str(data_set)
+```
+
+
+# 2. Creación de objeto de clase SummarizedExperiment
+
+Antes que nada, eliminamos la primera columna del dataset con el que vamos a trabajar, dado que contiene los IDs de los pacientes, información que no es relevante para realizar un estudio de este dataset:
+
+```{r}
+data_set <- data_set[,-1]
+```
+
+Ahora ya con esta modificación, creamos el objeto de clase `SummarizedExperiment`:
+
+```{r}
+sum_exp <- SummarizedExperiment(assays = list(original=data_set))
+```
+
+**¿Cuáles son sus principales diferencias con la clase ExpressionSet?**
+
+`SummarizedExperiment` se diferencia de `ExpressionSet` de la siguiente manera:
+
+* Mientras que `ExpressionSet` puede contener únicamente una sola matriz de expresión, `SummarizedExperiment` puede almacenar varias matrices o *assays*. 
+* `SummarizedExperiment` es más flexible que `ExpressionSet` con el tipo de información con la que puede tratar: `ExpressionSet` está limitado a datos provinientes de microarrays, mientras que `SummarizedExperiment` puede contener información de una variedad más amplia de experimentos, como RNA-Seq o Chip-Seq.
+
+# 3. Análisis exploratorio
+
+## 3.1. Breve descripción de los datos
+
+
+| **Medida**                    | **Valor**                               | 
+|:----------------------------- |:--------------------------------------- |
+| Nombre del archivo           | `r params$data_set`     |  
+| Numero de observaciones   |  `r nrow(assays(sum_exp)[[1]] )`    |  
+| Numero de variables  |  `r ncol(assays(sum_exp)[[1]] )`     |  
+| Número de valores NA    |  `r sum(is.na(data_set[[1]]))`    |  
+
+
+## 3.2. Estructura de los datos
+
+```{r}
+sum_exp
+```
+
+Como se puede observar, el objeto que se ha creado no contiene metadata, y por el momento contiene un solo *assay*. Vamos a crear un segundo *assay* que guardaremos en el objeto `sum_exp` y que contendrá todos los datos en formato numérico para facilitar su exploración.
+
+Guardamos los datos de expresión del único assay del dataset:
+
+```{r}
+expr_data <- assays(sum_exp)[[1]] 
+```
+
+Creamos una función propia que nos permita convertir un vector a código biario:
+
+```{r}
+to.binary <- function(vector, positive) {
+  # "vector" es el vector
+  # "positive" es la etiqueta positiva, y que por tanto se codifica como 1
+  x <- as.character(vector)
+  for (i in 1:length(x)) {
+    if (x[i] == as.character(positive)) {
+      x[i] <- 1
+    }
+    else {
+      x[i] <- 0
+    }
+  }
+  x <- as.numeric(x)
+  return(x)
+}
+```
+
+Usamos la función propia para modificar la variable "Muscle.loss" a formato binario. En el seguno argumento especificamos "cachexic" dado que es la etiqueta que queremos que se codifique con un `1`, mientras que "control" se codificará con un `0`. Esto nos permitirá realizar cálculos con esta variable.
+
+```{r}
+expr_data[,1] <- to.binary(expr_data[,1], "cachexic")
+```
+
+Verificamos la nueva estuctura de la variable que acabos de codificar
+
+```{r}
+str(expr_data[,1])
+```
+
+Una vez se ha realizado estas modificaciones, añadimos este nuevo dataset como un segundo *assay* de `sum_exp`, al que llamaremos `numeric`:
+
+```{r}
+assay(sum_exp, "numeric") <- expr_data
+```
+
+Verificamos que ha sido añadido correctamente:
+
+```{r}
+sum_exp
+```
+
+
+## 3.3. Exploración de los datos numéricos
+
+Realizados estos cambios, es interesante explorar la relación entre la cantidad de cada metabolito y la presencia o no de caquexia, lo cual se consigue obteniendo sus coeficientes de relación.
+
+Dado que este dataset contiene información de 63 metabolitos, para comprender mejor la información que nos proporcionan estos valores, vamos a representarlos en un gráfico de barras usando `ggplot()`. En este gráfico de barras colorearemos de otro color aquellos coeficientes de relación que se encuentren por encima de 0.4:
+
+```{r}
+# Creamos un assay con los coeficientes de relación
+correlaciones <- cor(assay(sum_exp, "numeric"))[1,-1]
+
+# Lo guardamos en un dataframe para poder obtener el gráfico:
+dataframe <- data.frame(names=names(correlaciones), values=unname(correlaciones))
+
+# Generamos el gráfico de barras, destacando en azul los coeficientes >0.4:
+ggplot(dataframe, aes(x=reorder(names, values), y=values, fill = values > 0.4)) + 
+  geom_bar(stat = "identity") + 
+  coord_flip() +
+  theme(axis.text.y = element_text(size = 5)) +
+  labs(x = "", y = "Coeficiente")
+```
+
+Como se observa, los metabolitos que presentan un mayor coeficiente de relación con la presencia o ausencia de caquexia son: *`r labels(which(correlaciones > 0.4))`*.
+
+
+# 4. Interpretación de los resultados
+
+Para entender la relación entre estos cuatro metabolitos y la caquexia, necesitamos entender en qué consiste la caquexia [1]:
+
+* Es una afección que consiste en una pérdida de más de un 10% de masa corporal (muscular y grasa) en aquellos pacientes que no están en un proceso activo de perder peso. 
+* La caquexia ocurre cuándo cambia la manera en que el cuerpo asimila y utiliza los nutrientes, debido a factores como una respuesta inflamatoria o con un aumento del metabolismo.
+* Y este cambio sueleser causado por enfermedades en estado avanzado como el cáncer o la SIDA, es muy difíci de revertir y suele ocurrir en el tramo final de la vida del paciente. 
+
+La relación entre la presencia de caquexia y la cantidad de los cuatro metabolitos es positiva, es decir, se detecta mayor cantidad de cada metabolito en aquellos pacientes que padecen de caquexia. 
+
+## 4.1. Leucina
+
+La leucina es un aminoácido esencial que el cuerpo humano no puede sintetizar por sí mismo. Es decir, es obtenida a través de la dieta. Este aminoácido interviene en el proceso de síntesis de proteína muscular, y por lo tanto tiene un rol relevante en procesos metabólicos relacionados con la caquexia.
+
+Dado que el aumento del consumo de alimentos ricos en leucina o suplementos de leucina ha sido relacionado con una reducción de la pérdida de masa corporal, es posible que el motivo por el que los pacientes con caquexia tienen niveles más altos de este aminoácido sea debido a un aumento del consumo de leucina como tratamiento para su afección. [2,3]
+
+## 4.2. N.N.Dimetilglicina
+
+La dimetilglicina es un compuesto derivado del aminoácido glicina y se utiliza como biomarcador. Su presencia en la orina de un paciente es indicador de la pérdida de masa corporal. Por ello, los pacientes que padecen caquexia tienen un mayor contenido de este compuesto que los pacientes que no tienen esta afección. [4]
+
+## 4.3. Quinolinato
+
+El quinolinato (o ácido quinolínico) es un ácido dicarboxílico unido a una pirimidina y es un producto sintetizado en la ruta de síntesis del triptófano. En altas cantidades tiene un efecto neurotóxico. Por ello, su presencia está relacionada con varias enfermedades neurológicas.
+
+En concreto, este compuesto se produce en grandes cantidades cuándo hay una inflamación, y dado que la presencia de una inflamación es uno de los factores que provocan la caquexia, este es posiblemente la razón por la que se observa ua cantidad mayor de este compuesto en pacientes con caquexia. [5]
+
+## 4.4. Valina
+
+La valina es un aminoácido de la misma familia que la leucina que también interviene en el proceso de síntesis de proteínas musculares. Por ello, como con la leucina, se ha observado que la ingestión de una cantidad más elevada de este aminoácido ayuda a reducir la pérdida muscular de pacientes, y por tanto que su mayor presencia en pacientes con caquexia esté relacionada con una dieta diseñada para paliar su afección. [3]
+
+## 4.5. Conclusiones
+
+Aunque el coeficiente de correlación de cada uno de estos componentes no llega a 0.5, puede que este coeficiente sea mayor si se tiene en cuenta elefecto en conjunto de todos estos metabolitos (y de otros que no llegaban a 0.4). Por ello, si se lleva a cabo un estudio estadísitico en profundidad en el que se estudiaran estos efectos y correlaciones, se podrán extraer conclusiones más relevantes. Con esta información (aunque tal vez requiera de un *dataset* más extenso) se podría detectar un patrón con técnicas de *machine learning* que permita el diagnóstico de la caquexia disponiendo solamente del perfil metabólico del paciente.
+
+# 5. Referencias
+
+[1] NIH National Cancer Institute. (n.d.) *Cachexia.* https://www.cancer.gov/espanol/publicaciones/diccionarios/diccionario-cancer/def/caquexia
+
+[2] Beaudry, A. G., & Law, M. L. (2022). Leucine Supplementation in Cancer Cachexia: Mechanisms and a Review of the Pre-Clinical Literature. Nutrients, 14(14), 2824. https://doi.org/10.3390/nu14142824
+
+[3] Eley, H. L., Russell, S. T., & Tisdale, M. J. (2007). Effect of branched-chain amino acids on muscle atrophy in cancer cachexia. The Biochemical journal, 407(1), 113–120. https://doi.org/10.1042/BJ20070651
+
+[4] Oliveira, M. S., Santo, R. C. E., Silva, J. M. S., Alabarse, P. V. G., Brenol, C. V., Young, S. P., & Xavier, R. M. (2023). Urinary metabolomic biomarker candidates for skeletal muscle wasting in patients with rheumatoid arthritis. Journal of cachexia, sarcopenia and muscle, 14(4), 1657–1669. https://doi.org/10.1002/jcsm.13240
+
+[5] Moffett, J. R., Arun, P., Puthillathu, N., Vengilote, R., Ives, J. A., Badawy, A. A., & Namboodiri, A. M. (2020). Quinolinate as a Marker for Kynurenine Metabolite Formation and the Unresolved Question of NAD+ Synthesis During Inflammation and Infection. Frontiers in immunology, 11, 31. https://doi.org/10.3389/fimmu.2020.00031
