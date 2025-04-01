@@ -24,27 +24,33 @@ require(reshape2)
 require(kableExtra)
 ```
 
+
+# 0. Repositorio GitHub
+
+[Acceso directo al repositorio GitHub con los datos.](https://github.com/annaaguila/Aguila-Griful-Anna-PEC1)
+
 # 1. Importación de los datos
 
 Usaremos el dataset `2024-Cachexia` del [repositorio de GitHub](https://github.com/nutrimetabolomics/metaboData/blob/main/Datasets/2024-Cachexia/human_cachexia.csv), que contiene inforación metabólica de sujetos enfermos (cachexia) y de sujetos sanos (control). 
 
 Se ha escogido este dataset debido a la calidad de los datos que contiene. Como se especifica en la [descripción de los datos](https://github.com/nutrimetabolomics/metaboData/blob/main/Datasets/2024-Cachexia/description.md), estos ya ha pasado un contol de calidad gracias al cual es posile tabajar directamente con un mínimo pre-procesamiento.
 
-```{r}
+Vemos la estructura de este dataset:
+
+```{r echo=FALSE}
 data_set <- read.csv(params$data_set)
 str(data_set)
 ```
 
+De las 65 variables, 63 son de tipo numérica y 2 de tipo carácter. De estas dos últimas, una corresponde al ID del paciete (información irrelevante para el estudio) y la otra define dos grupos de estdio: pacientes con caquexia (`cachexic`) y pacientes sin caquexia (`control`).
 
 # 2. Creación de objeto de clase SummarizedExperiment
 
-Antes que nada, eliminamos la primera columna del dataset con el que vamos a trabajar, dado que contiene los IDs de los pacientes, información que no es relevante para realizar un estudio de este dataset:
-
-```{r}
+```{r echo=FALSE}
 data_set <- data_set[,-1]
 ```
 
-Ahora ya con esta modificación, creamos el objeto de clase `SummarizedExperiment`:
+Antes que nada, se elimina la primera columna del dataset con el que vamos a trabajar, dado que contiene los IDs de los pacientes, información que no nos interesa. Una vez realizada esta modificación, creamos el objeto de clase `SummarizedExperiment`:
 
 ```{r}
 sum_exp <- SummarizedExperiment(assays = list(original=data_set))
@@ -72,21 +78,15 @@ sum_exp <- SummarizedExperiment(assays = list(original=data_set))
 
 ## 3.2. Estructura de los datos
 
-```{r}
+Vemos qué contiene objeto `SummarizedExperiment` que hemos creado:
+
+```{r echo=FALSE}
 sum_exp
 ```
 
-Como se puede observar, el objeto que se ha creado no contiene metadata, y por el momento contiene un solo *assay*. Vamos a crear un segundo *assay* que guardaremos en el objeto `sum_exp` y que contendrá todos los datos en formato numérico para facilitar su exploración.
+Como se puede observar, el objeto que se ha creado no contiene metadata, y por el momento contiene un solo *assay*. Vamos a crear un segundo *assay* llamado `numeric`que guardaremos en el objeto `sum_exp` y que contendrá todos los datos en formato numérico para facilitar su exploración.
 
-Guardamos los datos de expresión del único assay del dataset:
-
-```{r}
-expr_data <- assays(sum_exp)[[1]] 
-```
-
-Creamos una función propia que nos permita convertir un vector a código biario:
-
-```{r}
+```{r echo=FALSE}
 to.binary <- function(vector, positive) {
   # "vector" es el vector
   # "positive" es la etiqueta positiva, y que por tanto se codifica como 1
@@ -104,27 +104,26 @@ to.binary <- function(vector, positive) {
 }
 ```
 
-Usamos la función propia para modificar la variable "Muscle.loss" a formato binario. En el seguno argumento especificamos "cachexic" dado que es la etiqueta que queremos que se codifique con un `1`, mientras que "control" se codificará con un `0`. Esto nos permitirá realizar cálculos con esta variable.
+Para ello:
 
-```{r}
+* Se crea una función propia llamada `to.binary()` que permite convertir un vector a código binario.
+* Extraemos los datos de expresión del único assay del dataset y convertimos la variable `Muscle.loss` a código binario usando nuesta función propia. `cachexic` será `1`, y `control`, `0`. 
+* Una vez realizada la modificación, volvemos a guardar el dataset en el objeto de clase `SummarizedExperiment`, y al nuevo *assay* que generará le daremos el nombre de `numeric`. 
+
+Esta modificación nos permitirá realizar más exploraciones con esta variable. 
+
+```{r echo=FALSE}
+# Guardamos los datos de expresión del único assay del dataset:
+expr_data <- assays(sum_exp)[[1]] 
+# Convertimos la variable `Muscle.loss` a código binario:
 expr_data[,1] <- to.binary(expr_data[,1], "cachexic")
-```
-
-Verificamos la nueva estuctura de la variable que acabos de codificar
-
-```{r}
-str(expr_data[,1])
-```
-
-Una vez se ha realizado estas modificaciones, añadimos este nuevo dataset como un segundo *assay* de `sum_exp`, al que llamaremos `numeric`:
-
-```{r}
+# Guardamos el nuevo 'assay' en el objeto sum_exp:
 assay(sum_exp, "numeric") <- expr_data
 ```
 
-Verificamos que ha sido añadido correctamente:
+Si observamos el contenido del objeto de clase `SummarizedExperiment` resultante, vemos que ahora contiene dos *assays*:
 
-```{r}
+```{r echo=FALSE}
 sum_exp
 ```
 
@@ -135,7 +134,7 @@ Realizados estos cambios, es interesante explorar la relación entre la cantidad
 
 Dado que este dataset contiene información de 63 metabolitos, para comprender mejor la información que nos proporcionan estos valores, vamos a representarlos en un gráfico de barras usando `ggplot()`. En este gráfico de barras colorearemos de otro color aquellos coeficientes de relación que se encuentren por encima de 0.4:
 
-```{r}
+```{r echo=FALSE}
 # Creamos un assay con los coeficientes de relación
 correlaciones <- cor(assay(sum_exp, "numeric"))[1,-1]
 
